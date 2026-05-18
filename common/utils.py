@@ -1,5 +1,6 @@
 import json
 import socket
+import time
 
 def send_json(sock, msg_dict):
     """
@@ -25,18 +26,38 @@ def recv_json(sock, timeout=None):
         sock.settimeout(timeout)
     
     try:
-        # Using makefile('r') is highly robust for reading newline-delimited lines.
-        # It handles internal OS-level buffering properly.
         f = sock.makefile('r', encoding='utf-8')
         line = f.readline()
         if not line:
             return None
         return json.loads(line.strip())
-    except (socket.timeout, socket.error) as e:
-        # Silent timeout/error or print if needed
+    except (socket.timeout, socket.error):
         return None
     except json.JSONDecodeError:
         print("[Utils] Received invalid JSON format.")
         return None
     finally:
         sock.settimeout(old_timeout)
+
+def send_reliable(target_ip, target_port, msg_dict, max_retries=3, timeout=5):
+    """
+    Sends a JSON message and waits for an ACK response from the receiver.
+    Retries up to max_retries times with exponential backoff on failure.
+    Returns (success: bool, ack_data: dict or None).
+    """
+    for attempt in range(max_retries):
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.settimeout(timeout)
+        try:
+            s.connect((target_ip, int(target_port)))
+            if send_json(s, msg_dict):
+                ack = recv_json(s, timeout=timeout)
+                if ack and ack.get("type") == "ack" and ack.get("msg_id") == msg_dict.get("msg_id"):
+                    return True, ack
+        except Exception:
+            pass
+        finally:
+            s.close()
+        backoff = min(2 ** attempt, 8)
+        time.sleep(backoff)
+    return False, None

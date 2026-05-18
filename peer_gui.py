@@ -46,6 +46,13 @@ ACCENT_CYAN = "#89DCEB"   # Sky blue
 ACCENT_MAGENTA = "#F5C2E7"# Hot pink
 ACCENT_RED = "#F38BA8"    # Soft red
 
+# Color Mappings for Chat History Tags
+COLOR_SYSTEM = ACCENT_PURPLE
+COLOR_CHAT = ACCENT_GREEN
+COLOR_BROADCAST = ACCENT_CYAN
+COLOR_FILE = ACCENT_MAGENTA
+COLOR_ERROR = ACCENT_RED
+
 class PeerGUI:
     def __init__(self, root):
         self.root = root
@@ -134,7 +141,7 @@ class PeerGUI:
         
         # Header Logo
         header = ttk.Label(self.login_frame, text="P2P ENCRYPTED MESSENGER", style="Header.TLabel")
-        header.grid(row=0, column=0, columnspan=2, pady=(0, 20), sticky="center")
+        header.grid(row=0, column=0, columnspan=2, pady=(0, 20))
         
         # Name Entry
         ttk.Label(self.login_frame, text="Tên hiển thị:").grid(row=1, column=0, sticky="w", pady=5)

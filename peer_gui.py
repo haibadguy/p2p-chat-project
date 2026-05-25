@@ -79,6 +79,7 @@ class PeerGUI:
 
         # Sidebar selection tracking
         self._selected_frame = None
+        self.profile_label = None
 
         self.gui_queue = queue.Queue()
         self._build_login()
@@ -186,6 +187,7 @@ class PeerGUI:
 
         self.login_frame.destroy()
         self._build_main()
+        self._refresh_identity_label()
 
         self.broadcast_history.append(("system", f"Chào mừng {self.name} đến mạng P2P!"))
         self._render_view()
@@ -214,6 +216,14 @@ class PeerGUI:
                  font=(FONT, 14, "bold")).pack(anchor="w")
         tk.Label(hdr, text="End-to-end Encrypted", bg=BG_SIDEBAR, fg=TEXT_MUTED,
                  font=(FONT, 9)).pack(anchor="w")
+        self.profile_label = tk.Label(
+            hdr,
+            text="Bạn: -",
+            bg=BG_SIDEBAR,
+            fg=TEXT_DARK,
+            font=(FONT, 10, "bold"),
+        )
+        self.profile_label.pack(anchor="w", pady=(6, 0))
 
         sep = tk.Frame(self.sidebar, bg="#E0E0E8", height=1)
         sep.pack(fill="x", padx=12, pady=4)
@@ -254,6 +264,10 @@ class PeerGUI:
                               fg=TEXT_WHITE, font=(FONT, 10, "bold"), relief="flat",
                               cursor="hand2", padx=10, pady=6, command=self._handle_leave)
         leave_btn.pack(fill="x", padx=18, pady=(0, 18))
+
+    def _refresh_identity_label(self):
+        if self.profile_label:
+            self.profile_label.config(text=f"Bạn: {self.name} ({self.ip}:{self.port})")
 
     def _sidebar_nav_item(self, text, command):
         f = tk.Frame(self.sidebar, bg=BG_SIDEBAR, cursor="hand2")

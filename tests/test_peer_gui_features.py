@@ -4,8 +4,10 @@ import threading
 import time
 from pathlib import Path
 
+import pytest
 import tkinter as tk
 
+import peer_gui
 from bootstrap_server import BootstrapServer
 from common.encryption import encrypt_bytes, encrypt_string
 from peer_gui import PeerGUI
@@ -29,7 +31,10 @@ def wait_for(predicate, timeout=5.0, interval=0.05):
 
 
 def make_gui():
-    root = tk.Tk()
+    try:
+        root = tk.Tk()
+    except tk.TclError as exc:
+        pytest.skip(f"Tk GUI unavailable in this environment: {exc}")
     root.withdraw()
     app = PeerGUI(root)
     return root, app
@@ -288,10 +293,25 @@ def test_gui_broadcast_logs_when_peer_list_empty():
         app.online = True
         app.peer_list = []
 
-        app._do_send_broadcast("hello everyone")
-        time.sleep(0.2)
-        app._process_queue()
-        assert ("system", "Không có peer nào online.") in app.broadcast_history
+        class _ImmediateThread:
+            def __init__(self, target=None, args=(), kwargs=None, daemon=None):
+                self._target = target
+                self._args = args
+                self._kwargs = kwargs or {}
+
+            def start(self):
+                if self._target:
+                    self._target(*self._args, **self._kwargs)
+
+        original_thread = peer_gui.threading.Thread
+        peer_gui.threading.Thread = _ImmediateThread
+
+        try:
+            app._do_send_broadcast("hello everyone")
+            app._process_queue()
+            assert ("system", "Không có peer nào online.") in app.broadcast_history
+        finally:
+            peer_gui.threading.Thread = original_thread
     finally:
         stop_gui(root, app)
 

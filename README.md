@@ -1,117 +1,141 @@
-# 📌 HỆ THỐNG CHAT NGANG HÀNG TOÀN DIỆN (ELITE P2P CHAT APP)
+# ELITE P2P CHAT — Technical README
 
-Đây là ứng dụng Chat Ngang Hàng (Peer-to-Peer - P2P) được phát triển bằng ngôn ngữ **Python 3** sử dụng hoàn toàn thư viện chuẩn. 
-Hệ thống sử dụng mô hình **Bootstrap-Assisted P2P** kết hợp hai giao diện song song cực kỳ chuyên nghiệp: **Giao diện dòng lệnh (CLI màu sắc)** và **Giao diện đồ họa Desktop (Tkinter GUI)**, đồng thời tích hợp tính năng **Mã hóa đầu cuối E2EE (End-to-End Encryption)** thông qua thuật toán trao đổi khóa **Diffie-Hellman** và **Symmetric Stream Cipher** (tự phát triển thuần Python).
-
----
-
-## 1. ⚙️ Kiến trúc & Tính năng Đặc biệt
-
-### 1.1 Khám phá nút (Peer Discovery) & Heartbeat
-- **Bootstrap Server**: Lắng nghe tại port `5555`. Nhận các yêu cầu `register`, `heartbeat` và `leave` của các peer, tự động dọn dẹp các peer offline sau 60 giây.
-- **Peer Node**: Vừa hoạt động như một server lắng nghe kết nối TCP, vừa làm client kết nối đến Bootstrap và các peer khác. Cập nhật danh sách peer online tự động.
-
-### 1.2 Mã hóa đầu cuối E2EE (End-to-End Encryption)
-- **Tự động trao đổi khóa**: Khi nhắn tin hoặc gửi file 1-1 lần đầu tiên, hai peer tự động thực hiện bắt tay trao đổi khóa **Diffie-Hellman** (sử dụng số nguyên tố lớn an toàn 512-bit) để tính toán ra khóa chung đối xứng (Shared Secret).
-- **Mật mã hóa dòng (SHA-256 Keystream)**: Dữ liệu (tin nhắn/file nhị phân) được mã hóa bằng thuật toán XOR keystream kết hợp IV (Initialization Vector) 16-byte ngẫu nhiên. Ngay cả Bootstrap Server hay kẻ tấn công nghe lén cũng không thể đọc được nội dung truyền tải.
-
-### 1.3 Đa dạng giao diện
-- **CLI Mode (`peer.py`)**: Giao diện dòng lệnh được thiết kế trực quan, phân loại màu sắc ANSI đẹp mắt.
-- **GUI Mode (`peer_gui.py`)**: Giao diện cửa sổ Desktop chuyên nghiệp sử dụng Tkinter TTK, hỗ trợ hàng đợi đa luồng thread-safe chống treo đơ giao diện, tự động cập nhật danh sách peer, tích hợp hộp thoại chọn file và hiển thị E2EE bảo mật cao.
-
-```
-                     Bootstrap Server (TCP, port 5555)
-                     (quản lý danh sách peer online)
-                               |
-         ┌─────────────────────┼─────────────────────┐
-         │                     │                     │
-    Peer A (E2EE)         Peer B (E2EE)         Peer C (E2EE)
-   (CLI hoặc GUI)        (CLI hoặc GUI)        (CLI hoặc GUI)
-         │                     │                     │
-         └──────── Chat & File E2EE Trực tiếp ───────┘
-```
+Một ứng dụng chat ngang hàng (P2P) viết bằng Python 3, sử dụng mô hình Bootstrap-assisted P2P và hỗ trợ E2EE (Diffie-Hellman + symmetric keystream). README này tập trung vào hướng dẫn kỹ thuật: cài đặt, chạy, cấu trúc mã và các giao thức nội bộ.
 
 ---
 
-## 2. 📡 Giao thức Truyền tin E2EE (JSON Protocol)
+## Table of Contents
+- Project overview
+- Features
+- Architecture
+- Protocol (JSON messages)
+- Requirements
+- Setup & Run
+- Project structure
+- Development & Testing
+- Contributing
 
-Mọi dữ liệu trao đổi được chuẩn hóa dưới dạng JSON, kết thúc bằng ký tự xuống dòng `\n`.
+---
 
-### 2.1 Bắt tay trao đổi khóa (`key_exchange`)
+## Project overview
+
+This repository implements a peer-to-peer chat system with:
+- A Bootstrap server that tracks online peers (TCP, default port 5555).
+- Peer nodes that act as both TCP servers and clients for direct E2EE chat/file transfer.
+- Two UX modes: CLI (`peer.py`) and GUI (`peer_gui.py` using Tkinter/ttk).
+
+## Features
+- End-to-end encryption (Diffie-Hellman key exchange + symmetric keystream encryption).
+- Reliable delivery primitives (ACK/retry) and group/broadcast messaging.
+- File transfer over encrypted channels.
+
+## Architecture (high level)
+
+Bootstrap Server (TCP:5555)
+  └─ maintains peer registry, handles `register/heartbeat/leave`
+Peers (CLI or GUI)
+  ├─ perform DH key exchange on first contact
+  ├─ exchange JSON messages over TCP with newline delimiters
+  └─ send encrypted payloads (base64) + iv + msg_id
+
+## Protocol (JSON messages)
+
+All messages are JSON terminated by `\n`.
+
+Key examples:
+
+`key_exchange` (initiates DH):
 ```json
 {
   "type": "key_exchange",
-  "from": "Alice",
+  "from": "alice",
   "from_ip": "127.0.0.1",
   "from_port": 5001,
-  "pub_key": 28471927391...
+  "pub_key": "..."
 }
 ```
 
-### 2.2 Nhắn tin mã hóa E2EE (`chat`)
+`chat` (encrypted message):
 ```json
 {
   "type": "chat",
-  "from": "Alice",
-  "from_port": 5001,
-  "ciphertext": "base64_encrypted_payload...",
-  "iv": "base64_random_iv...",
-  "msg_id": "bfd67280-9289-4b61-9c60-c38a4497e594"
+  "from": "alice",
+  "ciphertext": "<base64>",
+  "iv": "<base64>",
+  "msg_id": "uuid"
 }
 ```
 
-### 2.3 Truyền File nhị phân mã hóa E2EE (`file`)
+`file` (encrypted file chunk or whole file):
 ```json
 {
   "type": "file",
-  "from": "Alice",
-  "from_port": 5001,
+  "from": "alice",
   "filename": "document.pdf",
-  "ciphertext": "base64_encrypted_file_bytes...",
-  "iv": "base64_random_iv...",
-  "msg_id": "c1f71a0b-1934-4530-9005-728b7e28b8b9"
+  "ciphertext": "<base64>",
+  "iv": "<base64>",
+  "msg_id": "uuid"
 }
 ```
 
----
+## Requirements
+- Python 3.8+ (3.10 recommended)
+- No third-party packages required (pure stdlib), but install virtualenv if desired.
 
-## 3. 🚀 Hướng dẫn Khởi chạy & Sử dụng
+## Setup & Run
 
-### 3.1 Khởi động Bootstrap Server
-Mở Terminal 1 và khởi động máy chủ đăng ký:
-```bash
+1. Clone repository and ensure you are on `main`:
+
+```powershell
+git fetch origin
+git checkout main
+git reset --hard origin/main
+```
+
+2. Start the Bootstrap server (default port 5555):
+
+```powershell
 py bootstrap_server.py
 ```
 
-### 3.2 Khởi chạy giao diện Desktop GUI (Khuyên dùng)
-Mở các Terminal khác và chạy lệnh sau để mở giao diện cửa sổ cực kỳ hiện đại:
-```bash
+3. Start one or more peers:
+
+- GUI mode (recommended):
+```powershell
 py peer_gui.py
 ```
-*Nhập Tên (ví dụ: Alice, Bob), Port lắng nghe (ví dụ: 5001, 5002) trực tiếp trên giao diện cửa sổ rồi nhấn **Kết nối vào mạng**.*
 
-### 3.3 Khởi chạy giao diện dòng lệnh CLI (Thay thế)
-Nếu muốn chạy bản giao diện Terminal, mở các Terminal khác và chạy:
-```bash
+- CLI mode:
+```powershell
 py peer.py --name Alice --port 5001
 ```
 
+Notes:
+- When using GUI, enter display name and listening port in the form.
+- Received files are saved under the project `received/` directory.
+
+## Project structure
+
+- `bootstrap_server.py` — minimal registry server for peer discovery
+- `peer.py` — CLI peer implementation and command set
+- `peer_gui.py` — Tkinter-based GUI peer
+- `common/` — shared modules (`encryption.py`, `message.py`, `utils.py`)
+- `received/` — directory where incoming files are stored
+
+## Development & Testing
+
+- Run unit checks (if added) with `pytest` (not included by default).
+- Linting: use `ruff`/`flake8` locally for style (optional).
+
+## Contributing
+
+- Create feature branches from `main`.
+- Keep commits atomic and signpost scope (e.g., `feat:`, `fix:`, `docs:`).
+
+## License & Contact
+
+See repository metadata for license. For questions or support, contact the maintainers.
+
 ---
 
-## 4. ⌨️ Hướng dẫn lệnh trên CLI Mode
-
-Khi chạy chế độ CLI, sử dụng các lệnh bắt đầu bằng `!`:
-
-| Lệnh | Ý nghĩa | Ví dụ |
-| :--- | :--- | :--- |
-| `!peers` | Xem danh sách các peer đang hoạt động trong mạng | `!peers` |
-| `!send <index> <msg>` | Gửi tin nhắn **mã hóa E2EE** 1-1 theo Index | `!send 1 Chào Bob!` |
-| `!broadcast <msg>` | Gửi tin nhắn quảng bá toàn mạng (không mã hóa) | `!broadcast Xin chào cả lớp` |
-| `!sendfile <index> <path>`| Gửi file **mã hóa E2EE** theo Index | `!sendfile 1 ảnh_đẹp.png` |
-| `!leave` | Rời khỏi mạng và đóng chương trình | `!leave` |
-| `!help` | Xem lại hướng dẫn lệnh | `!help` |
-
----
-
-## 5. 📁 Quản lý File Nhận
-Mọi file nhận được qua kênh E2EE của cả bản CLI và GUI sẽ tự động được giải mã và lưu trữ an toàn trong thư mục [received/](file:///d:/p2p-chat-project/received) tại thư mục gốc của dự án.
+Files received by peers are saved in `received/` relative to the project root.

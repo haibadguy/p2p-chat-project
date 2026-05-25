@@ -20,6 +20,9 @@ from common.message import (
     MSG_TYPE_KEY_EXCHANGE,
     MSG_TYPE_KEY_EXCHANGE_REPLY,
     MSG_TYPE_ACK,
+    MSG_TYPE_STORE_FORWARD,
+    MSG_TYPE_GET_PENDING,
+    MSG_TYPE_PENDING_BATCH,
     MSG_TYPE_GROUP_CREATE,
     MSG_TYPE_GROUP_JOIN,
     MSG_TYPE_GROUP_LEAVE,
@@ -59,8 +62,10 @@ class Peer:
         self.seen_messages = set()
         self.shared_keys = {}
         self.running = True
+        self.online = False
         self.server_socket = None
         self.lock = threading.Lock()
+        self.pending_poll_interval = 8
 
         # Group chat: {group_name: {"members": [(ip, port, name), ...], "creator": name}}
         self.groups = {}
@@ -147,6 +152,51 @@ class Peer:
         finally:
             s.close()
 
+    def _store_offline_message(self, target_ip, target_port, msg_dict):
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.settimeout(5)
+        try:
+            s.connect(self.bootstrap_addr)
+            req = {
+                "type": MSG_TYPE_STORE_FORWARD,
+                "target_ip": target_ip,
+                "target_port": int(target_port),
+                "message": msg_dict
+            }
+            if send_json(s, req):
+                res = recv_json(s, timeout=5)
+                return bool(res and res.get("status") == "success")
+            return False
+        except Exception:
+            return False
+        finally:
+            s.close()
+
+    def fetch_pending_messages(self):
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.settimeout(5)
+        try:
+            s.connect(self.bootstrap_addr)
+            req = {
+                "type": MSG_TYPE_GET_PENDING,
+                "ip": self.ip,
+                "port": self.port
+            }
+            if send_json(s, req):
+                res = recv_json(s, timeout=5)
+                if res and res.get("type") == MSG_TYPE_PENDING_BATCH:
+                    messages = res.get("messages", [])
+                    if messages:
+                        print(f"{COLOR_SYSTEM}[Store-and-Forward] Nhận {len(messages)} tin nhắn chờ từ Bootstrap.{COLOR_RESET}")
+                    for pending_msg in messages:
+                        self._process_incoming_message(None, (self.bootstrap_addr[0], self.bootstrap_addr[1]), pending_msg)
+                    return True
+            return False
+        except Exception:
+            return False
+        finally:
+            s.close()
+
     # ==================== SERVER & NETWORKING ====================
 
     def start_server(self):
@@ -223,10 +273,44 @@ class Peer:
             s.close()
         return None
 
+    def _process_incoming_message(self, conn, addr, msg):
+        msg_type = msg.get("type")
+
+        if msg_type == MSG_TYPE_KEY_EXCHANGE:
+            self._handle_key_exchange(conn, addr, msg)
+        elif msg_type == MSG_TYPE_CHAT:
+            self._handle_chat(conn, addr, msg)
+        elif msg_type == MSG_TYPE_BROADCAST:
+            self._handle_broadcast(conn, addr, msg)
+        elif msg_type == MSG_TYPE_FILE:
+            self._handle_file(conn, addr, msg)
+        elif msg_type == MSG_TYPE_GROUP_CREATE:
+            self._handle_group_create(conn, addr, msg)
+        elif msg_type == MSG_TYPE_GROUP_JOIN:
+            self._handle_group_join(conn, addr, msg)
+        elif msg_type == MSG_TYPE_GROUP_LEAVE:
+            self._handle_group_leave(conn, addr, msg)
+        elif msg_type == MSG_TYPE_GROUP_MSG:
+            self._handle_group_msg(conn, addr, msg)
+        elif msg_type == MSG_TYPE_GROUP_SYNC:
+            self._handle_group_sync(conn, addr, msg)
+        elif msg_type == MSG_TYPE_PEER_JOINED:
+            name = msg.get("peer_name", "Unknown")
+            print(f"\n{COLOR_SYSTEM}[Mạng] Peer [{name}] vừa tham gia mạng.{COLOR_RESET}")
+            print(">> ", end="", flush=True)
+            self.get_peer_list()
+        elif msg_type == MSG_TYPE_PEER_LEFT:
+            name = msg.get("peer_name", "Unknown")
+            print(f"\n{COLOR_SYSTEM}[Mạng] Peer [{name}] vừa rời khỏi mạng.{COLOR_RESET}")
+            print(">> ", end="", flush=True)
+            self.get_peer_list()
+
     # ==================== INCOMING MESSAGE HANDLER ====================
 
     def _send_ack(self, conn, msg_id):
         """Sends an ACK response back through the same connection."""
+        if conn is None:
+            return
         ack = {"type": MSG_TYPE_ACK, "msg_id": msg_id}
         send_json(conn, ack)
 
@@ -235,47 +319,7 @@ class Peer:
             msg = recv_json(conn, timeout=10)
             if not msg:
                 return
-
-            msg_type = msg.get("type")
-
-            if msg_type == MSG_TYPE_KEY_EXCHANGE:
-                self._handle_key_exchange(conn, addr, msg)
-
-            elif msg_type == MSG_TYPE_CHAT:
-                self._handle_chat(conn, addr, msg)
-
-            elif msg_type == MSG_TYPE_BROADCAST:
-                self._handle_broadcast(conn, addr, msg)
-
-            elif msg_type == MSG_TYPE_FILE:
-                self._handle_file(conn, addr, msg)
-
-            elif msg_type == MSG_TYPE_GROUP_CREATE:
-                self._handle_group_create(conn, addr, msg)
-
-            elif msg_type == MSG_TYPE_GROUP_JOIN:
-                self._handle_group_join(conn, addr, msg)
-
-            elif msg_type == MSG_TYPE_GROUP_LEAVE:
-                self._handle_group_leave(conn, addr, msg)
-
-            elif msg_type == MSG_TYPE_GROUP_MSG:
-                self._handle_group_msg(conn, addr, msg)
-
-            elif msg_type == MSG_TYPE_GROUP_SYNC:
-                self._handle_group_sync(conn, addr, msg)
-
-            elif msg_type == MSG_TYPE_PEER_JOINED:
-                name = msg.get("peer_name", "Unknown")
-                print(f"\n{COLOR_SYSTEM}[Mạng] Peer [{name}] vừa tham gia mạng.{COLOR_RESET}")
-                print(">> ", end="", flush=True)
-                self.get_peer_list()
-
-            elif msg_type == MSG_TYPE_PEER_LEFT:
-                name = msg.get("peer_name", "Unknown")
-                print(f"\n{COLOR_SYSTEM}[Mạng] Peer [{name}] vừa rời khỏi mạng.{COLOR_RESET}")
-                print(">> ", end="", flush=True)
-                self.get_peer_list()
+            self._process_incoming_message(conn, addr, msg)
 
         except Exception:
             pass
@@ -320,7 +364,7 @@ class Peer:
         b64_ciphertext = msg.get("ciphertext")
         b64_iv = msg.get("iv")
 
-        sender_ip = addr[0]
+        sender_ip = msg.get("from_ip") or addr[0]
         with self.lock:
             shared_key = self.shared_keys.get((sender_ip, from_port))
 
@@ -383,7 +427,7 @@ class Peer:
         b64_ciphertext = msg.get("ciphertext")
         b64_iv = msg.get("iv")
 
-        sender_ip = addr[0]
+        sender_ip = msg.get("from_ip") or addr[0]
         with self.lock:
             shared_key = self.shared_keys.get((sender_ip, from_port))
 
@@ -523,13 +567,15 @@ class Peer:
     def heartbeat_loop(self):
         while self.running:
             time.sleep(15)
-            if self.running:
+            if self.running and self.online:
                 self.send_heartbeat()
 
     def update_peer_list_loop(self):
         time.sleep(2)
         while self.running:
-            self.get_peer_list()
+            if self.online:
+                self.get_peer_list()
+                self.fetch_pending_messages()
             time.sleep(10)
 
     # ==================== PEER RESOLUTION HELPER ====================
@@ -571,6 +617,7 @@ class Peer:
         chat_msg = {
             "type": MSG_TYPE_CHAT,
             "from": self.name,
+            "from_ip": self.ip,
             "from_port": self.port,
             "ciphertext": b64_ciphertext,
             "iv": b64_iv,
@@ -582,7 +629,11 @@ class Peer:
         if success:
             print(f"{COLOR_CHAT}[E2EE Chat 1-1 tới {display_name}]: {content} {COLOR_SYSTEM}(ACK){COLOR_RESET}")
         else:
-            print(f"{COLOR_ERROR}[Lỗi Gửi] Không nhận được ACK từ {display_name} sau 3 lần thử. Peer có thể đã offline.{COLOR_RESET}")
+            queued = self._store_offline_message(target_ip, target_port, chat_msg)
+            if queued:
+                print(f"{COLOR_SYSTEM}[Store-and-Forward] Peer {display_name} đang offline, tin nhắn đã được lưu để gửi lại sau.{COLOR_RESET}")
+            else:
+                print(f"{COLOR_ERROR}[Lỗi Gửi] Không nhận được ACK từ {display_name} sau 3 lần thử. Peer có thể đã offline.{COLOR_RESET}")
 
     def handle_broadcast_command(self, content):
         with self.lock:
@@ -652,6 +703,7 @@ class Peer:
         file_msg = {
             "type": MSG_TYPE_FILE,
             "from": self.name,
+            "from_ip": self.ip,
             "from_port": self.port,
             "filename": filename,
             "ciphertext": b64_ciphertext,
@@ -664,7 +716,11 @@ class Peer:
         if success:
             print(f"{COLOR_FILE}[File E2EE] Gửi thành công file '{filename}' tới {display_name}! {COLOR_SYSTEM}(ACK){COLOR_RESET}")
         else:
-            print(f"{COLOR_ERROR}[Lỗi Gửi File] Không nhận được ACK từ {display_name} sau 3 lần thử.{COLOR_RESET}")
+            queued = self._store_offline_message(target_ip, target_port, file_msg)
+            if queued:
+                print(f"{COLOR_SYSTEM}[Store-and-Forward] File '{filename}' đã được lưu để gửi lại khi {display_name} online.{COLOR_RESET}")
+            else:
+                print(f"{COLOR_ERROR}[Lỗi Gửi File] Không nhận được ACK từ {display_name} sau 3 lần thử.{COLOR_RESET}")
 
     # ==================== GROUP CHAT CLI COMMANDS ====================
 
@@ -804,6 +860,25 @@ class Peer:
             print(f"  {COLOR_BOLD}{gname}{COLOR_RESET} ({len(member_names)} thành viên): {', '.join(member_names)}")
         print(f"{COLOR_BOLD}{COLOR_GROUP}========================================================{COLOR_RESET}")
 
+    def churn_loop(self, online_seconds=20, offline_seconds=10, cycles=None):
+        cycle_count = 0
+        while self.running and (cycles is None or cycle_count < cycles):
+            time.sleep(max(1, online_seconds))
+            if not self.running:
+                break
+            print(f"{COLOR_SYSTEM}[Churn] Peer {self.name} tạm rời mạng...{COLOR_RESET}")
+            self.online = False
+            self.leave_network()
+            time.sleep(max(1, offline_seconds))
+            if not self.running:
+                break
+            print(f"{COLOR_SYSTEM}[Churn] Peer {self.name} đang quay lại mạng...{COLOR_RESET}")
+            if self.register_with_bootstrap():
+                self.online = True
+                self.get_peer_list()
+                self.fetch_pending_messages()
+            cycle_count += 1
+
     # ==================== CLI DISPLAY ====================
 
     def print_help(self):
@@ -873,6 +948,7 @@ class Peer:
                         self.print_peers()
                     elif cmd == "!leave":
                         print(f"{COLOR_SYSTEM}[Hệ thống] Đang thông báo rời mạng lên Bootstrap...{COLOR_RESET}")
+                        self.online = False
                         self.running = False
                         break
                     elif cmd == "!send":
@@ -920,6 +996,7 @@ class Peer:
 
             except (KeyboardInterrupt, EOFError):
                 print(f"\n{COLOR_SYSTEM}[Hệ thống] Nhận được tín hiệu ngắt. Đang thoát...{COLOR_RESET}")
+                self.online = False
                 self.running = False
                 break
             except Exception as e:
@@ -941,6 +1018,10 @@ def main():
     parser.add_argument("--name", type=str)
     parser.add_argument("--bootstrap-host", type=str, default="127.0.0.1")
     parser.add_argument("--bootstrap-port", type=int, default=5555)
+    parser.add_argument("--churn", action="store_true", help="Simulate peer join/leave churn while the process stays alive")
+    parser.add_argument("--churn-online-seconds", type=int, default=20)
+    parser.add_argument("--churn-offline-seconds", type=int, default=10)
+    parser.add_argument("--churn-cycles", type=int, default=0)
 
     if sys.platform == "win32":
         os.system("color")
@@ -976,6 +1057,7 @@ def main():
     if not peer.register_with_bootstrap():
         print(f"{COLOR_ERROR}[Lỗi] Đăng ký không thành công. Hãy chắc chắn rằng Bootstrap Server đã hoạt động.{COLOR_RESET}")
         sys.exit(1)
+    peer.online = True
     print(f"{COLOR_CHAT}[Hệ thống] Đăng ký thành công!{COLOR_RESET}")
 
     server_thread = threading.Thread(target=peer.start_server, daemon=True)
@@ -986,6 +1068,20 @@ def main():
 
     update_thread = threading.Thread(target=peer.update_peer_list_loop, daemon=True)
     update_thread.start()
+
+    peer.fetch_pending_messages()
+
+    if args.churn:
+        churn_cycles = args.churn_cycles if args.churn_cycles > 0 else None
+        threading.Thread(
+            target=peer.churn_loop,
+            kwargs={
+                "online_seconds": args.churn_online_seconds,
+                "offline_seconds": args.churn_offline_seconds,
+                "cycles": churn_cycles,
+            },
+            daemon=True,
+        ).start()
 
     peer.cli_loop()
 

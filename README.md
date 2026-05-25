@@ -1,6 +1,6 @@
 # ELITE P2P CHAT — Technical README
 
-Một ứng dụng chat ngang hàng (P2P) viết bằng Python 3, sử dụng mô hình Bootstrap-assisted P2P và hỗ trợ E2EE (Diffie-Hellman + symmetric keystream). README này tập trung vào hướng dẫn kỹ thuật: cài đặt, chạy, cấu trúc mã và các giao thức nội bộ.
+Một ứng dụng chat ngang hàng (P2P) viết bằng Python 3, sử dụng mô hình Bootstrap-assisted P2P và hỗ trợ E2EE (Diffie-Hellman + symmetric keystream).
 
 ---
 
@@ -27,6 +27,8 @@ This repository implements a peer-to-peer chat system with:
 ## Features
 - End-to-end encryption (Diffie-Hellman key exchange + symmetric keystream encryption).
 - Reliable delivery primitives (ACK/retry) and group/broadcast messaging.
+- Store-and-forward via the Bootstrap server for offline peers.
+- CLI churn simulation with repeated join/leave cycles.
 - File transfer over encrypted channels.
 
 ## Architecture (high level)
@@ -110,6 +112,14 @@ py peer_gui.py
 py peer.py --name Alice --port 5001
 ```
 
+4. Optional churn simulation in CLI mode:
+
+```powershell
+py peer.py --name Alice --port 5001 --churn --churn-online-seconds 20 --churn-offline-seconds 10
+```
+
+This keeps the process alive while the peer repeatedly leaves and rejoins the Bootstrap registry.
+
 Notes:
 - When using GUI, enter display name and listening port in the form.
 - Received files are saved under the project `received/` directory.
@@ -121,10 +131,28 @@ Notes:
 - `peer_gui.py` — Tkinter-based GUI peer
 - `common/` — shared modules (`encryption.py`, `message.py`, `utils.py`)
 - `received/` — directory where incoming files are stored
+- Bootstrap also stores pending direct messages for later delivery when a peer comes back online.
 
 ## Development & Testing
 
-- Run unit checks (if added) with `pytest` (not included by default).
+- Install test dependencies:
+
+```powershell
+py -m pip install -r requirements-dev.txt
+```
+
+- Run the test suite:
+
+```powershell
+py -m pytest -q
+```
+
+- Run the demo script for churn + store-and-forward:
+
+```powershell
+py demo_churn.py
+```
+
 - Linting: use `ruff`/`flake8` locally for style (optional).
 
 ## Contributing

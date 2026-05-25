@@ -12,6 +12,9 @@ MSG_TYPE_FILE = "file"
 MSG_TYPE_KEY_EXCHANGE = "key_exchange"
 MSG_TYPE_KEY_EXCHANGE_REPLY = "key_exchange_reply"
 MSG_TYPE_ACK = "ack"
+MSG_TYPE_STORE_FORWARD = "store_forward"
+MSG_TYPE_GET_PENDING = "get_pending"
+MSG_TYPE_PENDING_BATCH = "pending_batch"
 
 # Group chat
 MSG_TYPE_GROUP_CREATE = "group_create"

@@ -10,6 +10,9 @@ from common.message import (
     MSG_TYPE_GET_PEERS,
     MSG_TYPE_HEARTBEAT,
     MSG_TYPE_LEAVE,
+    MSG_TYPE_STORE_FORWARD,
+    MSG_TYPE_GET_PENDING,
+    MSG_TYPE_PENDING_BATCH,
     MSG_TYPE_PEER_JOINED,
     MSG_TYPE_PEER_LEFT
 )
@@ -21,6 +24,7 @@ class BootstrapServer:
         self.host = host
         self.port = port
         self.peers = []
+        self.pending_messages = {}
         self.lock = threading.Lock()
         self.running = True
         self.server_socket = None
@@ -80,6 +84,10 @@ class BootstrapServer:
                 self.handle_heartbeat(conn, msg)
             elif msg_type == MSG_TYPE_LEAVE:
                 self.handle_leave(conn, msg)
+            elif msg_type == MSG_TYPE_STORE_FORWARD:
+                self.handle_store_forward(conn, msg)
+            elif msg_type == MSG_TYPE_GET_PENDING:
+                self.handle_get_pending(conn, msg)
             else:
                 send_json(conn, {"status": "error", "message": f"Unsupported message type: {msg_type}"})
 
@@ -243,6 +251,51 @@ class BootstrapServer:
             )
         else:
             send_json(conn, {"status": "error", "message": "Peer not registered"})
+
+    def handle_store_forward(self, conn, msg):
+        target_ip = msg.get("target_ip")
+        target_port = msg.get("target_port")
+        payload = msg.get("message")
+
+        if not target_ip or target_port is None or not isinstance(payload, dict):
+            send_json(conn, {"status": "error", "message": "Missing store-forward details"})
+            return
+
+        try:
+            target_port = int(target_port)
+        except ValueError:
+            send_json(conn, {"status": "error", "message": "Target port must be an integer"})
+            return
+
+        key = (target_ip, target_port)
+        with self.lock:
+            self.pending_messages.setdefault(key, []).append(payload)
+
+        print(f"[Bootstrap] Stored pending message for {target_ip}:{target_port} ({payload.get('type', 'unknown')})")
+        send_json(conn, {"status": "success", "message": "Message stored for later delivery"})
+
+    def handle_get_pending(self, conn, msg):
+        ip = msg.get("ip")
+        port = msg.get("port")
+
+        if not ip or port is None:
+            send_json(conn, {"status": "error", "message": "Missing pending queue details (ip, port)"})
+            return
+
+        try:
+            port = int(port)
+        except ValueError:
+            send_json(conn, {"status": "error", "message": "Port must be an integer"})
+            return
+
+        key = (ip, port)
+        with self.lock:
+            pending = self.pending_messages.pop(key, [])
+
+        send_json(conn, {
+            "type": MSG_TYPE_PENDING_BATCH,
+            "messages": pending
+        })
 
     def sweep_inactive_peers(self):
         """Removes peers with no heartbeat in 30 seconds. Checks every 5 seconds."""

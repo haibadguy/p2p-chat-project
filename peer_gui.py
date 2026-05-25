@@ -12,7 +12,8 @@ from common.message import (
     MSG_TYPE_REGISTER, MSG_TYPE_PEER_LIST, MSG_TYPE_GET_PEERS,
     MSG_TYPE_HEARTBEAT, MSG_TYPE_LEAVE, MSG_TYPE_CHAT, MSG_TYPE_BROADCAST,
     MSG_TYPE_FILE, MSG_TYPE_KEY_EXCHANGE, MSG_TYPE_KEY_EXCHANGE_REPLY,
-    MSG_TYPE_ACK, MSG_TYPE_GROUP_CREATE, MSG_TYPE_GROUP_JOIN,
+    MSG_TYPE_ACK, MSG_TYPE_STORE_FORWARD, MSG_TYPE_GET_PENDING, MSG_TYPE_PENDING_BATCH,
+    MSG_TYPE_GROUP_CREATE, MSG_TYPE_GROUP_JOIN,
     MSG_TYPE_GROUP_LEAVE, MSG_TYPE_GROUP_MSG, MSG_TYPE_GROUP_LIST,
     MSG_TYPE_GROUP_SYNC, MSG_TYPE_PEER_JOINED, MSG_TYPE_PEER_LEFT
 )
@@ -60,6 +61,7 @@ class PeerGUI:
         self.seen_messages = set()
         self.shared_keys = {}
         self.running = False
+        self.online = False
         self.server_socket = None
         self.lock = threading.Lock()
         self.groups = {}
@@ -81,6 +83,47 @@ class PeerGUI:
         self.gui_queue = queue.Queue()
         self._build_login()
         self.root.after(100, self._process_queue)
+
+    def _store_offline_message(self, target_ip, target_port, msg_dict):
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.settimeout(5)
+        try:
+            s.connect((self.bootstrap_host, self.bootstrap_port))
+            req = {
+                "type": MSG_TYPE_STORE_FORWARD,
+                "target_ip": target_ip,
+                "target_port": int(target_port),
+                "message": msg_dict
+            }
+            if send_json(s, req):
+                res = recv_json(s, timeout=5)
+                return bool(res and res.get("status") == "success")
+            return False
+        except Exception:
+            return False
+        finally:
+            s.close()
+
+    def _fetch_pending_messages(self):
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.settimeout(5)
+        try:
+            s.connect((self.bootstrap_host, self.bootstrap_port))
+            req = {"type": MSG_TYPE_GET_PENDING, "ip": self.ip, "port": self.port}
+            if send_json(s, req):
+                res = recv_json(s, timeout=5)
+                if res and res.get("type") == MSG_TYPE_PENDING_BATCH:
+                    messages = res.get("messages", [])
+                    if messages:
+                        self.gui_queue.put(("log", f"[Store-and-Forward] Nhận {len(messages)} tin nhắn chờ từ Bootstrap."))
+                    for pending_msg in messages:
+                        self._process_incoming_message(None, (self.bootstrap_host, self.bootstrap_port), pending_msg)
+                    return True
+            return False
+        except Exception:
+            return False
+        finally:
+            s.close()
 
     # ======================== LOGIN ========================
 
@@ -136,6 +179,7 @@ class PeerGUI:
             return
 
         self.running = True
+        self.online = True
         threading.Thread(target=self._start_server, daemon=True).start()
         threading.Thread(target=self._heartbeat_loop, daemon=True).start()
         threading.Thread(target=self._update_loop, daemon=True).start()
@@ -146,6 +190,7 @@ class PeerGUI:
         self.broadcast_history.append(("system", f"Chào mừng {self.name} đến mạng P2P!"))
         self._render_view()
         threading.Thread(target=self._get_peer_list, daemon=True).start()
+        threading.Thread(target=self._fetch_pending_messages, daemon=True).start()
 
     # ======================== MAIN LAYOUT ========================
 
@@ -513,12 +558,15 @@ class PeerGUI:
                 return
             b64_ct, b64_iv = encrypt_string(content, shared_key)
             msg = {"type": MSG_TYPE_CHAT, "from": self.name, "from_port": self.port,
-                   "ciphertext": b64_ct, "iv": b64_iv, "msg_id": str(uuid.uuid4())}
+                   "from_ip": self.ip, "ciphertext": b64_ct, "iv": b64_iv, "msg_id": str(uuid.uuid4())}
             ok = self._send_with_ack(ip, port, msg)
             if ok:
                 self.gui_queue.put(("msg_out", name, content, ip, port))
             else:
-                self.gui_queue.put(("log", f"[Lỗi] Không nhận được ACK từ {name}."))
+                if self._store_offline_message(ip, port, msg):
+                    self.gui_queue.put(("log", f"[Store-and-Forward] Đã lưu tin nhắn cho {name} để gửi lại sau."))
+                else:
+                    self.gui_queue.put(("log", f"[Lỗi] Không nhận được ACK từ {name}."))
         threading.Thread(target=task, daemon=True).start()
 
     def _do_send_broadcast(self, content):
@@ -596,13 +644,16 @@ class PeerGUI:
                 self.gui_queue.put(("log", f"[Lỗi] Đọc/mã hóa file thất bại: {e}"))
                 return
             msg = {"type": MSG_TYPE_FILE, "from": self.name, "from_port": self.port,
-                   "filename": filename, "ciphertext": b64_ct, "iv": b64_iv,
+                   "from_ip": self.ip, "filename": filename, "ciphertext": b64_ct, "iv": b64_iv,
                    "msg_id": str(uuid.uuid4())}
             ok = self._send_with_ack(ip, port, msg)
             if ok:
                 self.gui_queue.put(("msg_out", name, f"[File] {filename}", ip, port))
             else:
-                self.gui_queue.put(("log", f"[Lỗi] Gửi file tới {name} thất bại."))
+                if self._store_offline_message(ip, port, msg):
+                    self.gui_queue.put(("log", f"[Store-and-Forward] File '{filename}' đã được lưu để gửi lại sau."))
+                else:
+                    self.gui_queue.put(("log", f"[Lỗi] Gửi file tới {name} thất bại."))
         threading.Thread(target=task, daemon=True).start()
 
     # ======================== GROUP GUI ACTIONS ========================
@@ -695,6 +746,7 @@ class PeerGUI:
 
     def _handle_leave(self):
         if messagebox.askyesno("Xác nhận", "Rời khỏi mạng P2P?"):
+            self.online = False
             self.running = False
             self._leave_network()
             if self.server_socket:
@@ -742,6 +794,8 @@ class PeerGUI:
             s.close()
 
     def _send_heartbeat(self):
+        if not self.online:
+            return
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         s.settimeout(3)
         try:
@@ -763,16 +817,46 @@ class PeerGUI:
         finally:
             s.close()
 
+    def _process_incoming_message(self, conn, addr, msg):
+        t = msg.get("type")
+
+        if t == MSG_TYPE_KEY_EXCHANGE:
+            self._on_key_exchange(conn, msg)
+        elif t == MSG_TYPE_CHAT:
+            self._on_chat(conn, addr, msg)
+        elif t == MSG_TYPE_BROADCAST:
+            self._on_broadcast(conn, addr, msg)
+        elif t == MSG_TYPE_FILE:
+            self._on_file(conn, addr, msg)
+        elif t == MSG_TYPE_GROUP_CREATE:
+            self._on_group_create(conn, msg)
+        elif t == MSG_TYPE_GROUP_JOIN:
+            self._on_group_join(conn, msg)
+        elif t == MSG_TYPE_GROUP_LEAVE:
+            self._on_group_leave(conn, msg)
+        elif t == MSG_TYPE_GROUP_MSG:
+            self._on_group_msg(conn, addr, msg)
+        elif t == MSG_TYPE_GROUP_SYNC:
+            self._on_group_sync(conn, msg)
+        elif t == MSG_TYPE_PEER_JOINED:
+            self.gui_queue.put(("peer_event", f"[{msg.get('peer_name','?')}] vừa tham gia mạng."))
+            self._get_peer_list()
+        elif t == MSG_TYPE_PEER_LEFT:
+            self.gui_queue.put(("peer_event", f"[{msg.get('peer_name','?')}] vừa rời khỏi mạng."))
+            self._get_peer_list()
+
     def _heartbeat_loop(self):
         while self.running:
             time.sleep(15)
-            if self.running:
+            if self.running and self.online:
                 self._send_heartbeat()
 
     def _update_loop(self):
         time.sleep(2)
         while self.running:
-            self._get_peer_list()
+            if self.online:
+                self._get_peer_list()
+                self._fetch_pending_messages()
             time.sleep(10)
 
     def _start_server(self):
@@ -839,6 +923,8 @@ class PeerGUI:
     # ======================== INCOMING HANDLERS ========================
 
     def _send_ack(self, conn, msg_id):
+        if conn is None:
+            return
         send_json(conn, {"type": MSG_TYPE_ACK, "msg_id": msg_id})
 
     def _handle_incoming(self, conn, addr):
@@ -846,32 +932,7 @@ class PeerGUI:
             msg = recv_json(conn, timeout=10)
             if not msg:
                 return
-            t = msg.get("type")
-
-            if t == MSG_TYPE_KEY_EXCHANGE:
-                self._on_key_exchange(conn, msg)
-            elif t == MSG_TYPE_CHAT:
-                self._on_chat(conn, addr, msg)
-            elif t == MSG_TYPE_BROADCAST:
-                self._on_broadcast(conn, addr, msg)
-            elif t == MSG_TYPE_FILE:
-                self._on_file(conn, addr, msg)
-            elif t == MSG_TYPE_GROUP_CREATE:
-                self._on_group_create(conn, msg)
-            elif t == MSG_TYPE_GROUP_JOIN:
-                self._on_group_join(conn, msg)
-            elif t == MSG_TYPE_GROUP_LEAVE:
-                self._on_group_leave(conn, msg)
-            elif t == MSG_TYPE_GROUP_MSG:
-                self._on_group_msg(conn, addr, msg)
-            elif t == MSG_TYPE_GROUP_SYNC:
-                self._on_group_sync(conn, msg)
-            elif t == MSG_TYPE_PEER_JOINED:
-                self.gui_queue.put(("peer_event", f"[{msg.get('peer_name','?')}] vừa tham gia mạng."))
-                self._get_peer_list()
-            elif t == MSG_TYPE_PEER_LEFT:
-                self.gui_queue.put(("peer_event", f"[{msg.get('peer_name','?')}] vừa rời khỏi mạng."))
-                self._get_peer_list()
+            self._process_incoming_message(conn, addr, msg)
         except Exception:
             pass
         finally:
@@ -902,7 +963,7 @@ class PeerGUI:
             fp = int(msg.get("from_port"))
         except (ValueError, TypeError):
             return
-        sip = addr[0]
+        sip = msg.get("from_ip") or addr[0]
         with self.lock:
             key = self.shared_keys.get((sip, fp))
         ct, iv = msg.get("ciphertext"), msg.get("iv")
@@ -944,7 +1005,7 @@ class PeerGUI:
         except (ValueError, TypeError):
             return
         fname = msg.get("filename", "file")
-        sip = addr[0]
+        sip = msg.get("from_ip") or addr[0]
         with self.lock:
             key = self.shared_keys.get((sip, fp))
         ct, iv = msg.get("ciphertext"), msg.get("iv")

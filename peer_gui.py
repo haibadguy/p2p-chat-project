@@ -17,7 +17,7 @@ from common.message import (
     MSG_TYPE_GROUP_LEAVE, MSG_TYPE_GROUP_MSG, MSG_TYPE_GROUP_LIST,
     MSG_TYPE_GROUP_SYNC, MSG_TYPE_PEER_JOINED, MSG_TYPE_PEER_LEFT
 )
-from common.utils import send_json, recv_json, send_reliable
+from common.utils import get_local_ip, send_json, recv_json, send_reliable
 from common.encryption import (
     DiffieHellman, encrypt_string, decrypt_string, encrypt_bytes, decrypt_bytes
 )
@@ -51,7 +51,7 @@ class PeerGUI:
         self.root.configure(bg=BG_WHITE)
         self.root.minsize(900, 600)
 
-        self.ip = "127.0.0.1"
+        self.ip = get_local_ip()
         self.port = 5001
         self.name = ""
         self.bootstrap_host = "127.0.0.1"
@@ -142,7 +142,7 @@ class PeerGUI:
 
         for i, (label, default) in enumerate([
             ("Tên hiển thị", "Alice"), ("Cổng lắng nghe", "5001"),
-            ("IP Bootstrap", "127.0.0.1"), ("Cổng Bootstrap", "5555")
+            ("IP Bootstrap", self.ip), ("Cổng Bootstrap", "5555")
         ]):
             tk.Label(fields, text=label, bg=BG_WHITE, fg=TEXT_DARK,
                      font=(FONT, 10), anchor="w").grid(row=i, column=0, sticky="w", pady=4, padx=(0, 12))

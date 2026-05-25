@@ -2,6 +2,34 @@ import json
 import socket
 import time
 
+
+def get_local_ip(fallback="127.0.0.1"):
+    """Best-effort detection of the machine's LAN IP address."""
+    probe = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        probe.connect(("8.8.8.8", 80))
+        ip = probe.getsockname()[0]
+        if ip and not ip.startswith("127."):
+            return ip
+    except Exception:
+        pass
+    finally:
+        try:
+            probe.close()
+        except Exception:
+            pass
+
+    try:
+        hostname = socket.gethostname()
+        for addr in socket.getaddrinfo(hostname, None, socket.AF_INET):
+            candidate = addr[4][0]
+            if candidate and not candidate.startswith("127."):
+                return candidate
+    except Exception:
+        pass
+
+    return fallback
+
 def send_json(sock, msg_dict):
     """
     Serializes a dictionary to JSON, appends a newline character,

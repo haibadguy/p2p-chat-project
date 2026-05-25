@@ -32,7 +32,7 @@ from common.message import (
     MSG_TYPE_PEER_JOINED,
     MSG_TYPE_PEER_LEFT
 )
-from common.utils import send_json, recv_json, send_reliable
+from common.utils import get_local_ip, send_json, recv_json, send_reliable
 from common.encryption import (
     DiffieHellman,
     encrypt_string,
@@ -1013,7 +1013,7 @@ class Peer:
 
 def main():
     parser = argparse.ArgumentParser(description="P2P Chat Node")
-    parser.add_argument("--ip", type=str, default="127.0.0.1")
+    parser.add_argument("--ip", type=str, default=None)
     parser.add_argument("--port", type=int)
     parser.add_argument("--name", type=str)
     parser.add_argument("--bootstrap-host", type=str, default="127.0.0.1")
@@ -1045,8 +1045,10 @@ def main():
             print("[Lỗi] Port phải là số nguyên hợp lệ.")
             sys.exit(1)
 
+    peer_ip = args.ip or get_local_ip()
+
     peer = Peer(
-        ip=args.ip,
+        ip=peer_ip,
         port=port,
         name=name,
         bootstrap_host=args.bootstrap_host,

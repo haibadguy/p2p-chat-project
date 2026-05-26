@@ -396,7 +396,9 @@ Demo này sẽ tự dựng bootstrap, Alice, Bob, Carol, rồi kiểm tra:
 
 ## Demo trực quan
 
-- Có thể chụp thêm screenshot GUI hoặc gắn link video demo tại đây nếu cần nộp báo cáo.
+<img width="1280" height="764" alt="Screenshot 2026-05-26 220036" src="https://github.com/user-attachments/assets/b1f6fae9-534c-44d1-9a1c-e15b180373f6" />
+<img width="1277" height="559" alt="Screenshot 2026-05-26 220156" src="https://github.com/user-attachments/assets/b3ddba85-c0fb-4998-a656-00596adf03b9" />
+
 
 ## Đóng góp
 

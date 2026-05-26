@@ -437,9 +437,10 @@ class Peer:
                 iv = base64.b64decode(b64_iv.encode('utf-8'))
                 file_data = decrypt_bytes(ciphertext, shared_key, iv)
 
-                os.makedirs("received", exist_ok=True)
+                received_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "received")
+                os.makedirs(received_dir, exist_ok=True)
                 safe_filename = os.path.basename(filename)
-                dest_path = os.path.join("received", safe_filename)
+                dest_path = os.path.join(received_dir, safe_filename)
                 with open(dest_path, "wb") as f:
                     f.write(file_data)
 

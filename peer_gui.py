@@ -6,6 +6,9 @@ import queue
 import uuid
 import time
 import os
+import sys
+import shutil
+import subprocess
 import base64
 
 from common.message import (
@@ -82,6 +85,7 @@ class PeerGUI:
         self.profile_label = None
 
         self.gui_queue = queue.Queue()
+        self.received_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "received")
         self._build_login()
         self.root.after(100, self._process_queue)
 
@@ -507,6 +511,87 @@ class PeerGUI:
             self._add_bubble(item[2], sender=item[1])
         elif t == "broadcast_out":
             self._add_bubble(item[1], is_outgoing=True)
+        elif t == "file_in":
+            self._add_file_bubble(item[2], item[3], sender=item[1])
+        elif t == "file_out":
+            self._add_file_bubble(item[1], item[2], is_outgoing=True)
+
+    def _open_file_path(self, filepath):
+        if not filepath or not os.path.isfile(filepath):
+            messagebox.showerror("Lỗi", f"Không tìm thấy file:\n{filepath or '(trống)'}")
+            return
+        try:
+            if sys.platform == "win32":
+                os.startfile(os.path.normpath(filepath))
+            elif sys.platform == "darwin":
+                subprocess.run(["open", filepath], check=False)
+            else:
+                subprocess.run(["xdg-open", filepath], check=False)
+        except Exception as e:
+            messagebox.showerror("Lỗi", f"Không thể mở file:\n{e}")
+
+    def _save_file_as(self, filepath, filename):
+        if not filepath or not os.path.isfile(filepath):
+            messagebox.showerror("Lỗi", f"Không tìm thấy file:\n{filepath or '(trống)'}")
+            return
+        dest = filedialog.asksaveasfilename(
+            title="Lưu file về...",
+            initialfile=filename,
+            defaultextension=os.path.splitext(filename)[1],
+        )
+        if not dest:
+            return
+        try:
+            shutil.copy2(filepath, dest)
+            messagebox.showinfo("Thành công", f"Đã lưu file tại:\n{dest}")
+        except Exception as e:
+            messagebox.showerror("Lỗi", f"Không thể lưu file:\n{e}")
+
+    def _add_file_bubble(self, filename, filepath, sender=None, is_outgoing=False):
+        self.chat_text.config(state="normal")
+
+        if not is_outgoing and sender:
+            lbl = tk.Label(self.chat_text, text=sender, bg=BG_WHITE, fg=TEXT_MUTED,
+                           font=(FONT, 9, "bold"), anchor="w")
+            self.chat_text.window_create("end", window=lbl, padx=18, pady=10)
+            self.chat_text.insert("end", "\n")
+
+        bg = BG_BUBBLE_OUT if is_outgoing else BG_BUBBLE_IN
+        fg = TEXT_WHITE if is_outgoing else TEXT_DARK
+        btn_fg = TEXT_WHITE if is_outgoing else TEXT_ACCENT
+        btn_bg = "#4A4EB5" if is_outgoing else BG_WHITE
+
+        frame = tk.Frame(self.chat_text, bg=bg, padx=12, pady=10)
+        tk.Label(frame, text="\U0001F4CE", bg=bg, fg=fg, font=(FONT, 16)).pack(anchor="w")
+        tk.Label(frame, text=filename, bg=bg, fg=fg, font=(FONT, 10, "bold"),
+                 wraplength=BUBBLE_WRAP - 40, justify="left").pack(anchor="w", pady=(4, 2))
+        if filepath and os.path.isfile(filepath):
+            status = "Sẵn sàng — bấm Mở hoặc Lưu về"
+        elif filepath:
+            status = f"Đường dẫn: {filepath}"
+        else:
+            status = "Đã gửi"
+        tk.Label(frame, text=status, bg=bg, fg=fg, font=(FONT, 8),
+                 wraplength=BUBBLE_WRAP - 40, justify="left").pack(anchor="w", pady=(0, 6))
+
+        btn_row = tk.Frame(frame, bg=bg)
+        btn_row.pack(anchor="w")
+        if filepath:
+            tk.Button(
+                btn_row, text="Mở", bg=btn_bg, fg=btn_fg, font=(FONT, 9, "bold"),
+                relief="flat", cursor="hand2", padx=10, pady=4,
+                command=lambda p=filepath: self._open_file_path(p),
+            ).pack(side="left", padx=(0, 6))
+            tk.Button(
+                btn_row, text="Lưu về...", bg=btn_bg, fg=btn_fg, font=(FONT, 9),
+                relief="flat", cursor="hand2", padx=10, pady=4,
+                command=lambda p=filepath, n=filename: self._save_file_as(p, n),
+            ).pack(side="left")
+
+        self.chat_text.window_create("end", window=frame, padx=18, pady=3)
+        self.chat_text.insert("end", "\n")
+        self.chat_text.config(state="disabled")
+        self.chat_text.see("end")
 
     def _add_bubble(self, text, sender=None, is_outgoing=False):
         self.chat_text.config(state="normal")
@@ -662,7 +747,7 @@ class PeerGUI:
                    "msg_id": str(uuid.uuid4())}
             ok = self._send_with_ack(ip, port, msg)
             if ok:
-                self.gui_queue.put(("msg_out", name, f"[File] {filename}", ip, port))
+                self.gui_queue.put(("file_out", name, filename, filepath, ip, port))
             else:
                 if self._store_offline_message(ip, port, msg):
                     self.gui_queue.put(("log", f"[Store-and-Forward] File '{filename}' đã được lưu để gửi lại sau."))
@@ -1023,21 +1108,26 @@ class PeerGUI:
         with self.lock:
             key = self.shared_keys.get((sip, fp))
         ct, iv = msg.get("ciphertext"), msg.get("iv")
-        if key and ct and iv:
-            try:
-                raw_ct = base64.b64decode(ct.encode())
-                raw_iv = base64.b64decode(iv.encode())
-                data = decrypt_bytes(raw_ct, key, raw_iv)
-                os.makedirs("received", exist_ok=True)
-                safe = os.path.basename(fname)
-                path = os.path.join("received", safe)
-                with open(path, "wb") as f:
-                    f.write(data)
-                if mid:
-                    self._send_ack(conn, mid)
-                self.gui_queue.put(("msg_in", sender, f"[File] {safe} (đã lưu)", sip, fp))
-            except Exception:
-                pass
+        if not key:
+            self.gui_queue.put(("log", f"[File] Không có khóa E2EE để nhận file từ [{sender}]."))
+            return
+        if not ct or not iv:
+            self.gui_queue.put(("log", f"[File] Dữ liệu file từ [{sender}] không hợp lệ."))
+            return
+        try:
+            raw_ct = base64.b64decode(ct.encode())
+            raw_iv = base64.b64decode(iv.encode())
+            data = decrypt_bytes(raw_ct, key, raw_iv)
+            os.makedirs(self.received_dir, exist_ok=True)
+            safe = os.path.basename(fname)
+            path = os.path.join(self.received_dir, safe)
+            with open(path, "wb") as f:
+                f.write(data)
+            if mid:
+                self._send_ack(conn, mid)
+            self.gui_queue.put(("file_in", sender, safe, os.path.abspath(path), sip, fp))
+        except Exception as e:
+            self.gui_queue.put(("log", f"[File] Giải mã/lưu file từ [{sender}] thất bại: {e}"))
 
     def _on_group_create(self, conn, msg):
         gn = msg.get("group_name")
@@ -1141,6 +1231,28 @@ class PeerGUI:
                     self.peer_chats.setdefault(key, []).append(("out", content))
                     if self.current_view == "peer" and self.current_peer_key == key:
                         self._add_bubble(content, is_outgoing=True)
+
+                elif action == "file_in":
+                    sender, filename, filepath, sip, sport = (
+                        item[1], item[2], item[3], item[4], int(item[5])
+                    )
+                    key = (sip, sport)
+                    self.peer_chats.setdefault(key, []).append(
+                        ("file_in", sender, filename, filepath)
+                    )
+                    if self.current_view == "peer" and self.current_peer_key == key:
+                        self._add_file_bubble(filename, filepath, sender=sender)
+
+                elif action == "file_out":
+                    tname, filename, filepath, tip, tport = (
+                        item[1], item[2], item[3], item[4], int(item[5])
+                    )
+                    key = (tip, tport)
+                    self.peer_chats.setdefault(key, []).append(
+                        ("file_out", filename, filepath)
+                    )
+                    if self.current_view == "peer" and self.current_peer_key == key:
+                        self._add_file_bubble(filename, filepath, is_outgoing=True)
 
                 elif action == "broadcast_in":
                     sender, content = item[1], item[2]

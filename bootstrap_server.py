@@ -33,20 +33,22 @@ class BootstrapServer:
         sweeper = threading.Thread(target=self.sweep_inactive_peers, daemon=True)
         sweeper.start()
 
-        self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 
         try:
-            self.server_socket.bind((self.host, self.port))
-            self.server_socket.listen(10)
+            server_socket.bind((self.host, self.port))
+            server_socket.listen(10)
+            self.server_socket = server_socket
             print(f"[Bootstrap] Server running on {self.host}:{self.port}")
         except socket.error as e:
             print(f"[Bootstrap] Failed to bind to {self.host}:{self.port} - {e}")
+            server_socket.close()
             sys.exit(1)
 
         try:
             while self.running:
-                conn, addr = self.server_socket.accept()
+                conn, addr = server_socket.accept()
                 threading.Thread(target=self.handle_client, args=(conn, addr), daemon=True).start()
         except KeyboardInterrupt:
             print("\n[Bootstrap] KeyboardInterrupt received. Shutting down server...")

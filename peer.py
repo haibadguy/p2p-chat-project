@@ -201,15 +201,14 @@ class Peer:
 
     def start_server(self):
         server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.server_socket = server_socket
         server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         try:
             server_socket.bind((self.ip, self.port))
             server_socket.listen(10)
+            self.server_socket = server_socket
         except Exception as e:
             print(f"{COLOR_ERROR}[Lỗi Khởi Động Server] Không thể bind port {self.port}: {e}{COLOR_RESET}")
             self.running = False
-            self.server_socket = None
             server_socket.close()
             return
 

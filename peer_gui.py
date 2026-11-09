@@ -960,14 +960,13 @@ class PeerGUI:
 
     def _start_server(self):
         server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.server_socket = server_socket
         server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         try:
             server_socket.bind((self.ip, self.port))
             server_socket.listen(10)
+            self.server_socket = server_socket
         except Exception:
             self.running = False
-            self.server_socket = None
             server_socket.close()
             return
         try:

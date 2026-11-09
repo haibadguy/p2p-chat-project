@@ -7,7 +7,13 @@ import pytest
 
 import peer as peer_module
 from bootstrap_server import BootstrapServer
-from common.encryption import encrypt_bytes, encrypt_string
+from common.encryption import (
+    DH_GENERATOR,
+    DH_PRIME,
+    DiffieHellman,
+    encrypt_bytes,
+    encrypt_string,
+)
 from common.message import MSG_TYPE_BROADCAST
 from peer import Peer
 
@@ -263,3 +269,15 @@ def test_send_command_reports_when_no_shared_key(peer_factory, capsys):
     peer.handle_send_command("1", "hello no key")
     out = capsys.readouterr().out
     assert "Từ chối gửi tin nhắn" in out or "không thiết lập được kênh bảo mật" in out
+
+
+def test_dh_uses_2048_bit_safe_prime_and_both_sides_agree():
+    assert DH_PRIME.bit_length() == 2048
+    assert DH_PRIME % 8 == 7  # safe prime: p = 2q + 1
+    assert DH_GENERATOR == 2
+
+    alice = DiffieHellman()
+    bob = DiffieHellman()
+    assert alice.generate_shared_key(bob.public_key) == bob.generate_shared_key(
+        alice.public_key
+    )

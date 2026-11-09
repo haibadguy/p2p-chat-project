@@ -441,7 +441,7 @@ Demo này sẽ tự dựng bootstrap, Alice, Bob, Carol, rồi kiểm tra:
 
 ## Bảo mật
 
-- Mỗi cặp peer trao đổi khóa Diffie-Hellman với prime 512-bit (`DH_PRIME`) và generator `g = 2`; khóa chung `B^a mod p` được băm SHA-256 thành khóa phiên 256-bit.
+- Mỗi cặp peer trao đổi khóa Diffie-Hellman trên nhóm MODP 2048-bit của RFC 3526 (group 14, safe prime) với generator `g = 2`; khóa chung `B^a mod p` được băm SHA-256 thành khóa phiên 256-bit.
 - Nội dung chat và file được mã hóa tại peer gửi trước khi truyền, nên bootstrap chỉ chuyển tiếp bản mã của tin nhắn chờ.
 - Mã hóa đối xứng hiện tại là XOR với keystream SHA-256 sinh từ `SHA-256(key || IV || counter)`, với IV ngẫu nhiên 16 byte; đây là cơ chế tự triển khai, không phải AES-GCM hay ChaCha20-Poly1305 và không cung cấp xác thực/toàn vẹn bản mã.
 - Trao đổi khóa chưa xác thực danh tính peer và không có chữ ký/fingerprint đáng tin cậy, vì vậy hệ thống chưa chống được tấn công man-in-the-middle. Không dùng ứng dụng này để truyền dữ liệu nhạy cảm trong môi trường không tin cậy.

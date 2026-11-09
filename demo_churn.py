@@ -1,9 +1,19 @@
 import argparse
 import base64
 import socket
+import sys
 import threading
 import time
 from pathlib import Path
+
+# Windows consoles write Unicode through WriteConsoleW, but piped or redirected
+# output falls back to the legacy code page (e.g. cp1258) and raises
+# UnicodeEncodeError on Vietnamese text. Force UTF-8 when stdout is not a TTY.
+try:
+    if not sys.stdout.isatty() and hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
 
 from bootstrap_server import BootstrapServer
 from common.encryption import encrypt_bytes, encrypt_string

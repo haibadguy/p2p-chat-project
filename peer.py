@@ -7,6 +7,16 @@ import sys
 import os
 import base64
 import argparse
+import sys
+
+# Windows consoles write Unicode through WriteConsoleW, but piped or redirected
+# output falls back to the legacy code page (e.g. cp1258) and raises
+# UnicodeEncodeError on Vietnamese text. Force UTF-8 when stdout is not a TTY.
+try:
+    if not sys.stdout.isatty() and hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
 
 from common.message import (
     MSG_TYPE_REGISTER,

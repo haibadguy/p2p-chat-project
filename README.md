@@ -1,5 +1,16 @@
 # P2P Chat System – E2EE, Group Chat, File Transfer
 
+![tests](https://github.com/haibadguy/p2p-chat-project/actions/workflows/tests.yml/badge.svg)
+
+## Kết quả chính
+
+- Nhắn tin 1-1, broadcast và nhóm chat trực tiếp giữa các peer trong LAN.
+- Gửi file mã hóa đầu cuối, có ACK/retry và giới hạn kích thước 2 MB.
+- Peer offline nhận lại tin nhắn chờ qua cơ chế store-and-forward khi quay lại mạng.
+- Có CLI, giao diện Tkinter và bộ kiểm thử tự động chạy trên Python 3.10 và 3.12.
+
+> GIF minh họa hai peer trò chuyện, gửi file và nhận tin nhắn sau khi quay lại mạng sẽ được lưu tại `docs/demo.gif` sau khi quay bằng ScreenToGif.
+
 Ứng dụng chat ngang hàng (P2P) viết bằng Python 3, theo mô hình Bootstrap-assisted P2P, hỗ trợ mã hóa đầu cuối E2EE, nhắn tin 1-1, broadcast, nhóm chat, gửi file và store-and-forward cho peer offline.
 
 ## Mục lục
@@ -9,6 +20,7 @@
 - Giao thức nhắn tin
 - Yêu cầu môi trường
 - Hướng dẫn chạy chi tiết
+- Bảo mật
 - Kịch bản chạy trên cùng LAN
 - Cấu trúc thư mục
 - Kiểm thử và demo
@@ -159,15 +171,25 @@ sudo ufw allow 5001:5010/tcp
 ### Bước 1: Mở terminal tại thư mục dự án
 
 ```powershell
-cd D:\p2p-chat-project
+git clone https://github.com/haibadguy/p2p-chat-project.git
+cd p2p-chat-project
+```
+
+Trên Linux/macOS:
+
+```bash
+git clone https://github.com/haibadguy/p2p-chat-project.git
+cd p2p-chat-project
 ```
 
 ### Bước 2: Đồng bộ source mới nhất từ `main`
 
 ```powershell
-git fetch origin
-git checkout main
-git reset --hard origin/main
+git pull origin main
+```
+
+```bash
+git pull origin main
 ```
 
 ### Bước 3: Chạy bootstrap server
@@ -176,6 +198,10 @@ Bootstrap là thành phần bắt buộc phải chạy trước tất cả peer.
 
 ```powershell
 py bootstrap_server.py
+```
+
+```bash
+python3 bootstrap_server.py
 ```
 
 Mặc định bootstrap lắng nghe tại:
@@ -188,6 +214,10 @@ Một peer CLI tối thiểu:
 
 ```powershell
 py peer.py --name Alice --port 5001
+```
+
+```bash
+python3 peer.py --name Alice --port 5001
 ```
 
 Peer thứ hai:
@@ -207,6 +237,10 @@ py peer.py --name Bob --ip 192.168.1.11 --port 5002 --bootstrap-host 192.168.1.1
 
 ```powershell
 py peer_gui.py
+```
+
+```bash
+python3 peer_gui.py
 ```
 
 Trong form đăng nhập của GUI:
@@ -243,7 +277,7 @@ Ví dụ:
 !peers
 !send 1 Xin chao Bob
 !broadcast Xin chao toan mang
-!sendfile 1 D:\p2p-chat-project\test.txt
+!sendfile 1 test.txt
 ```
 
 ### Bước 7: Churn simulation trên CLI
@@ -270,14 +304,14 @@ Giả sử có 3 máy trong cùng mạng nội bộ:
 ### Trên máy A
 
 ```powershell
-cd D:\p2p-chat-project
+cd p2p-chat-project
 py bootstrap_server.py
 ```
 
 ### Trên máy B
 
 ```powershell
-cd D:\p2p-chat-project
+cd p2p-chat-project
 py peer_gui.py
 ```
 
@@ -290,7 +324,7 @@ py peer_gui.py
 ### Trên máy C
 
 ```powershell
-cd D:\p2p-chat-project
+cd p2p-chat-project
 py peer_gui.py
 ```
 
@@ -344,6 +378,9 @@ demo_churn.py         # Demo churn + store-and-forward
 requirements-dev.txt   # Dependency cho test
 tests/                # Pytest suite
 received/             # Nơi lưu file nhận được
+docs/
+  bao-cao.pdf          # Báo cáo dự án
+  demo.gif             # GIF demo (sau khi quay)
 ```
 
 ## Kiểm thử và demo
@@ -386,13 +423,28 @@ Demo này sẽ tự dựng bootstrap, Alice, Bob, Carol, rồi kiểm tra:
 - Nếu chạy LAN mà peer không thấy nhau, kiểm tra firewall và IP bootstrap đã nhập đúng chưa.
 - Nếu chỉ có một peer online, danh sách peer khác có thể rỗng vì hệ thống không hiện chính peer đang đăng ký.
 
+## Bảo mật
+
+- Mỗi cặp peer trao đổi khóa Diffie-Hellman với prime 512-bit (`DH_PRIME`) và generator `g = 2`; khóa chung `B^a mod p` được băm SHA-256 thành khóa phiên 256-bit.
+- Nội dung chat và file được mã hóa tại peer gửi trước khi truyền, nên bootstrap chỉ chuyển tiếp bản mã của tin nhắn chờ.
+- Mã hóa đối xứng hiện tại là XOR với keystream SHA-256 sinh từ `SHA-256(key || IV || counter)`, với IV ngẫu nhiên 16 byte; đây là cơ chế tự triển khai, không phải AES-GCM hay ChaCha20-Poly1305 và không cung cấp xác thực/toàn vẹn bản mã.
+- Trao đổi khóa chưa xác thực danh tính peer và không có chữ ký/fingerprint đáng tin cậy, vì vậy hệ thống chưa chống được tấn công man-in-the-middle. Không dùng ứng dụng này để truyền dữ liệu nhạy cảm trong môi trường không tin cậy.
+
 ## Giới hạn của hệ thống
 
 - Hiện tại chỉ hoạt động tốt trong môi trường **mạng LAN**.
 - Chưa hỗ trợ **NAT traversal**; muốn đi qua Internet cần cấu hình port forwarding thủ công.
 - **Bootstrap server** là điểm tập trung duy nhất, nên nếu nó dừng thì peer mới không thể vào mạng.
 - Gửi file rất lớn có thể làm tăng độ trễ do cơ chế ACK/retry.
+- File được nạp toàn bộ vào bộ nhớ và giới hạn 2 MB; chưa hỗ trợ truyền theo luồng (streaming) hoặc tiếp tục truyền khi gián đoạn.
+- Chống nhận trùng `msg_id` hiện mới áp dụng cho broadcast/group; chat 1-1 và file có thể bị xử lý lặp lại nếu ACK bị mất và bên gửi retry.
+- Kết nối peer đóng đột ngột được xử lý bằng timeout/retry nhưng chưa có cơ chế phát hiện hoặc phục hồi kết nối toàn diện.
 - Chưa lưu lịch sử tin nhắn cục bộ sau khi thoát ứng dụng.
+
+## Báo cáo và demo
+
+- [Đọc báo cáo dự án](docs/bao-cao.pdf)
+- Quay `docs/demo.gif` bằng ScreenToGif theo kịch bản: Alice và Bob chat, Alice gửi file, Bob rời mạng, Alice gửi tin nhắn, rồi Bob quay lại để nhận tin nhắn chờ.
 
 ## Demo trực quan
 
@@ -408,5 +460,5 @@ Demo này sẽ tự dựng bootstrap, Alice, Bob, Carol, rồi kiểm tra:
 
 ## License
 
-Xem metadata của repository để biết thông tin license.
+[MIT License](LICENSE).
 

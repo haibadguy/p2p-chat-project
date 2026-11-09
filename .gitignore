@@ -3,6 +3,10 @@ __pycache__/
 *.py[cod]
 *$py.class
 
+# Test and virtual-environment artifacts
+.pytest_cache/
+.venv/
+
 # Received files folder
 received/
 

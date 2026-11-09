@@ -20,11 +20,15 @@
 
 ### Store-and-forward khi peer offline
 
+![CLI demo](docs/demo-cli.gif)
+
 ```powershell
 py demo_churn.py
 ```
 
 Demo tự dựng bootstrap, Alice, Bob, Carol rồi kiểm tra chat có ACK, gửi file mã hóa, lưu tin khi Carol offline và giao lại khi Carol quay lại mạng.
+
+> GIF trên được dựng lại từ output thực tế của `py demo_churn.py`, không phải quay màn hình.
 
 ## Mục lục
 - [Tổng quan](#tổng-quan)
@@ -397,6 +401,7 @@ tests/                # Pytest suite
 received/             # Nơi lưu file nhận được
 docs/
   bao-cao.pdf          # Báo cáo dự án
+  demo-cli.gif         # GIF demo store-and-forward (dựng từ output thật)
 ```
 
 ## Kiểm thử và demo

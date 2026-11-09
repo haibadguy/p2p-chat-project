@@ -28,9 +28,12 @@ class DiffieHellman:
 
 def encrypt_decrypt_bytes(data: bytes, key: bytes, iv: bytes) -> bytes:
     """
-    Low-level symmetric XOR stream cipher using SHA-256 keystream.
-    This works exactly like AES-CTR or ChaCha20, maintaining excellent
-    security and performance natively in Python.
+    Low-level symmetric XOR stream cipher using a SHA-256 keystream.
+
+    The construction is structurally similar to a stream cipher such as
+    AES-CTR or ChaCha20, but this is a teaching implementation: it has no
+    MAC/AEAD tag and no peer authentication, so it does not provide
+    ciphertext integrity. Do not use it for production or sensitive data.
     """
     out = bytearray()
     counter = 0

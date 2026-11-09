@@ -2,6 +2,8 @@
 
 ![tests](https://github.com/haibadguy/p2p-chat-project/actions/workflows/tests.yml/badge.svg)
 
+Ứng dụng chat ngang hàng (P2P) viết bằng Python 3, theo mô hình Bootstrap-assisted P2P, hỗ trợ mã hóa đầu cuối E2EE, nhắn tin 1-1, broadcast, nhóm chat, gửi file và store-and-forward cho peer offline.
+
 ## Kết quả chính
 
 - Nhắn tin 1-1, broadcast và nhóm chat trực tiếp giữa các peer trong LAN.
@@ -9,22 +11,37 @@
 - Peer offline nhận lại tin nhắn chờ qua cơ chế store-and-forward khi quay lại mạng.
 - Có CLI, giao diện Tkinter và bộ kiểm thử tự động chạy trên Python 3.10 và 3.12.
 
-> GIF minh họa hai peer trò chuyện, gửi file và nhận tin nhắn sau khi quay lại mạng sẽ được lưu tại `docs/demo.gif` sau khi quay bằng ScreenToGif.
+## Demo trực quan
 
-Ứng dụng chat ngang hàng (P2P) viết bằng Python 3, theo mô hình Bootstrap-assisted P2P, hỗ trợ mã hóa đầu cuối E2EE, nhắn tin 1-1, broadcast, nhóm chat, gửi file và store-and-forward cho peer offline.
+### Giao diện GUI
+
+<img width="1280" height="764" alt="Giao diện chat 1-1" src="https://github.com/user-attachments/assets/b1f6fae9-534c-44d1-9a1c-e15b180373f6" />
+<img width="1277" height="559" alt="Giao diện gửi file và nhóm chat" src="https://github.com/user-attachments/assets/b3ddba85-c0fb-4998-a656-00596adf03b9" />
+
+### Store-and-forward khi peer offline
+
+```powershell
+py demo_churn.py
+```
+
+Demo tự dựng bootstrap, Alice, Bob, Carol rồi kiểm tra chat có ACK, gửi file mã hóa, lưu tin khi Carol offline và giao lại khi Carol quay lại mạng.
 
 ## Mục lục
-- Tổng quan
-- Kiến trúc hệ thống
-- Tính năng chính
-- Giao thức nhắn tin
-- Yêu cầu môi trường
-- Hướng dẫn chạy chi tiết
-- Bảo mật
-- Kịch bản chạy trên cùng LAN
-- Cấu trúc thư mục
-- Kiểm thử và demo
-- Ghi chú vận hành
+- [Tổng quan](#tổng-quan)
+- [Kiến trúc hệ thống](#kiến-trúc-hệ-thống)
+- [Tính năng chính](#tính-năng-chính)
+- [Giao thức nhắn tin](#giao-thức-nhắn-tin)
+- [Yêu cầu môi trường](#yêu-cầu-môi-trường)
+- [Hướng dẫn chạy chi tiết](#hướng-dẫn-chạy-chi-tiết)
+- [Kịch bản chạy trên cùng LAN](#kịch-bản-chạy-trên-cùng-lan)
+- [Cấu trúc thư mục](#cấu-trúc-thư-mục)
+- [Kiểm thử và demo](#kiểm-thử-và-demo)
+- [Ghi chú vận hành](#ghi-chú-vận-hành)
+- [Bảo mật](#bảo-mật)
+- [Giới hạn của hệ thống](#giới-hạn-của-hệ-thống)
+- [Báo cáo và demo](#báo-cáo-và-demo)
+- [Đóng góp](#đóng-góp)
+- [License](#license)
 
 ## Tổng quan
 
@@ -133,7 +150,7 @@ Mọi message đều là JSON và kết thúc bằng ký tự xuống dòng `\n`
 
 ## Yêu cầu môi trường
 
-- Python 3.8+; khuyến nghị Python 3.10 hoặc mới hơn.
+- Python 3.10+ (CI kiểm thử trên Python 3.10 và 3.12).
 - Không cần thư viện bên ngoài cho runtime chính.
 - Nếu dùng GUI, máy phải hỗ trợ Tkinter.
 - Khi chạy LAN, nên mở firewall cho:
@@ -380,7 +397,6 @@ tests/                # Pytest suite
 received/             # Nơi lưu file nhận được
 docs/
   bao-cao.pdf          # Báo cáo dự án
-  demo.gif             # GIF demo (sau khi quay)
 ```
 
 ## Kiểm thử và demo
@@ -429,6 +445,7 @@ Demo này sẽ tự dựng bootstrap, Alice, Bob, Carol, rồi kiểm tra:
 - Nội dung chat và file được mã hóa tại peer gửi trước khi truyền, nên bootstrap chỉ chuyển tiếp bản mã của tin nhắn chờ.
 - Mã hóa đối xứng hiện tại là XOR với keystream SHA-256 sinh từ `SHA-256(key || IV || counter)`, với IV ngẫu nhiên 16 byte; đây là cơ chế tự triển khai, không phải AES-GCM hay ChaCha20-Poly1305 và không cung cấp xác thực/toàn vẹn bản mã.
 - Trao đổi khóa chưa xác thực danh tính peer và không có chữ ký/fingerprint đáng tin cậy, vì vậy hệ thống chưa chống được tấn công man-in-the-middle. Không dùng ứng dụng này để truyền dữ liệu nhạy cảm trong môi trường không tin cậy.
+- Khóa phiên chỉ lưu trong bộ nhớ (in-memory), không ghi ra đĩa; khi peer khởi động lại, khóa cũ mất và phải trao đổi khóa lại.
 
 ## Giới hạn của hệ thống
 
@@ -439,18 +456,15 @@ Demo này sẽ tự dựng bootstrap, Alice, Bob, Carol, rồi kiểm tra:
 - File được nạp toàn bộ vào bộ nhớ và giới hạn 2 MB; chưa hỗ trợ truyền theo luồng (streaming) hoặc tiếp tục truyền khi gián đoạn.
 - Chống nhận trùng `msg_id` hiện mới áp dụng cho broadcast/group; chat 1-1 và file có thể bị xử lý lặp lại nếu ACK bị mất và bên gửi retry.
 - Kết nối peer đóng đột ngột được xử lý bằng timeout/retry nhưng chưa có cơ chế phát hiện hoặc phục hồi kết nối toàn diện.
+- **Khóa phiên không tồn tại qua lần khởi động lại.** Mỗi lần chạy lại, peer sinh cặp khóa Diffie-Hellman mới, nên tin nhắn đang chờ gửi tới peer vừa restart sẽ không giải mã được và bị bỏ qua. Đây là hệ quả của thiết kế E2EE (không ghi khóa phiên ra đĩa), không phải lỗi.
+- **Chưa có giao thức re-handshake tự động.** Để giao được tin chờ sau khi peer restart cần: phát hiện public key thay đổi, trao đổi khóa lại và yêu cầu bên gửi gửi lại. Đây là hướng phát triển tiếp theo.
 - Chưa lưu lịch sử tin nhắn cục bộ sau khi thoát ứng dụng.
 
 ## Báo cáo và demo
 
 - [Đọc báo cáo dự án](docs/bao-cao.pdf)
-- Quay `docs/demo.gif` bằng ScreenToGif theo kịch bản: Alice và Bob chat, Alice gửi file, Bob rời mạng, Alice gửi tin nhắn, rồi Bob quay lại để nhận tin nhắn chờ.
-
-## Demo trực quan
-
-<img width="1280" height="764" alt="Screenshot 2026-05-26 220036" src="https://github.com/user-attachments/assets/b1f6fae9-534c-44d1-9a1c-e15b180373f6" />
-<img width="1277" height="559" alt="Screenshot 2026-05-26 220156" src="https://github.com/user-attachments/assets/b3ddba85-c0fb-4998-a656-00596adf03b9" />
-
+- Ảnh giao diện và demo store-and-forward: xem mục [Demo trực quan](#demo-trực-quan) ở đầu README.
+- Kịch bản quay GIF bằng ScreenToGif: phần GUI quay chat 1-1, gửi file, tạo nhóm và gửi tin nhắn nhóm; phần store-and-forward quay khi chạy `py demo_churn.py`.
 
 ## Đóng góp
 

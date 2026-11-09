@@ -74,13 +74,8 @@ def started_peer(peer_factory):
     yield start_peer
 
     for peer in created:
-        peer.running = False
         peer.online = False
-        try:
-            if peer.server_socket:
-                peer.server_socket.close()
-        except Exception:
-            pass
+        peer.stop_server()
         time.sleep(0.05)
 
 
@@ -191,14 +186,9 @@ def test_store_forward_offline_message_is_delivered(bootstrap_server, started_pe
     shared_key = alice.ensure_shared_key("127.0.0.1", bob.port)
     assert shared_key is not None
 
-    bob.running = False
     bob.online = False
-    try:
-        if bob.server_socket:
-            bob.server_socket.close()
-    except Exception:
-        pass
-    time.sleep(0.3)
+    bob.stop_server()
+    assert wait_for(lambda: bob.server_socket is None, timeout=2.0)
 
     ciphertext, iv = encrypt_string("offline hello", shared_key)
     offline_msg = {

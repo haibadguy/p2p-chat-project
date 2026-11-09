@@ -41,13 +41,8 @@ def make_gui():
 
 
 def stop_gui(root, app):
-    app.running = False
     app.online = False
-    try:
-        if app.server_socket:
-            app.server_socket.close()
-    except Exception:
-        pass
+    app._stop_server()
     try:
         root.destroy()
     except Exception:
@@ -184,14 +179,9 @@ def test_gui_direct_chat_file_and_pending_delivery(tmp_path):
         received_path.unlink(missing_ok=True)
 
         # Offline store-and-forward path.
-        receiver.running = False
         receiver.online = False
-        try:
-            if receiver.server_socket:
-                receiver.server_socket.close()
-        except Exception:
-            pass
-        time.sleep(0.3)
+        receiver._stop_server()
+        assert wait_for(lambda: receiver.server_socket is None, timeout=2.0)
 
         offline_ciphertext, offline_iv = encrypt_string("offline gui hello", key)
         offline_msg = {

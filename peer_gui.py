@@ -959,20 +959,45 @@ class PeerGUI:
             time.sleep(10)
 
     def _start_server(self):
-        self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         try:
-            self.server_socket.bind((self.ip, self.port))
-            self.server_socket.listen(10)
+            server_socket.bind((self.ip, self.port))
+            server_socket.listen(10)
+            self.server_socket = server_socket
         except Exception:
             self.running = False
+            server_socket.close()
             return
-        while self.running:
+        try:
+            while self.running:
+                try:
+                    conn, addr = server_socket.accept()
+                    threading.Thread(target=self._handle_incoming, args=(conn, addr), daemon=True).start()
+                except OSError:
+                    break
+        finally:
             try:
-                conn, addr = self.server_socket.accept()
-                threading.Thread(target=self._handle_incoming, args=(conn, addr), daemon=True).start()
-            except Exception:
-                break
+                server_socket.close()
+            except OSError:
+                pass
+            if self.server_socket is server_socket:
+                self.server_socket = None
+
+    def _stop_server(self):
+        """Stop accepting connections and unblock the listener immediately."""
+        self.running = False
+        server_socket = self.server_socket
+        self.server_socket = None
+        if server_socket:
+            try:
+                server_socket.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                pass
+            try:
+                server_socket.close()
+            except OSError:
+                pass
 
     def _send_direct(self, ip, port, msg):
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)

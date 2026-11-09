@@ -200,22 +200,48 @@ class Peer:
     # ==================== SERVER & NETWORKING ====================
 
     def start_server(self):
-        self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.server_socket = server_socket
+        server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         try:
-            self.server_socket.bind((self.ip, self.port))
-            self.server_socket.listen(10)
+            server_socket.bind((self.ip, self.port))
+            server_socket.listen(10)
         except Exception as e:
             print(f"{COLOR_ERROR}[Lỗi Khởi Động Server] Không thể bind port {self.port}: {e}{COLOR_RESET}")
             self.running = False
-            sys.exit(1)
+            self.server_socket = None
+            server_socket.close()
+            return
 
-        while self.running:
+        try:
+            while self.running:
+                try:
+                    conn, addr = server_socket.accept()
+                    threading.Thread(target=self.handle_incoming, args=(conn, addr), daemon=True).start()
+                except OSError:
+                    break
+        finally:
             try:
-                conn, addr = self.server_socket.accept()
-                threading.Thread(target=self.handle_incoming, args=(conn, addr), daemon=True).start()
-            except Exception:
-                break
+                server_socket.close()
+            except OSError:
+                pass
+            if self.server_socket is server_socket:
+                self.server_socket = None
+
+    def stop_server(self):
+        """Stop accepting connections and unblock the listener immediately."""
+        self.running = False
+        server_socket = self.server_socket
+        self.server_socket = None
+        if server_socket:
+            try:
+                server_socket.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                pass
+            try:
+                server_socket.close()
+            except OSError:
+                pass
 
     def send_direct_message(self, target_ip, target_port, msg_dict):
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
